@@ -46,3 +46,9 @@ prices:
     free_tier: true
     source_url: synthetic
     checked_on: 2026-11-03
+  mock/local:
+    input_per_1m: null
+    output_per_1m: null
+    free_tier: true
+    source_url: synthetic
+    checked_on: 2026-11-03
