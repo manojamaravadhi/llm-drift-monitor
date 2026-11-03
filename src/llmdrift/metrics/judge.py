@@ -29,7 +29,8 @@ FAITHFULNESS_STEPS = [
     "Identify every factual claim in 'actual output'.",
     "Check each claim against 'retrieval context'. Claims not supported by it are "
     "hallucinations, even if true in the real world.",
-    "Score 1 when all claims are supported, 0 when the main answer is unsupported.",
+    "Give the highest score when every claim is supported by the context, and the lowest "
+    "score when the main answer is unsupported or contradicts the context.",
 ]
 
 
@@ -80,15 +81,26 @@ class DeepEvalJudge:
         from deepeval.models import LiteLLMModel
         from deepeval.test_case import SingleTurnParams
 
-        # G-Eval asks for token log-probabilities, which e.g. Gemini does not support.
-        litellm.drop_params = True
+        class NoLogprobLiteLLM(LiteLLMModel):  # type: ignore[no-untyped-call]
+            """G-Eval first asks for token log-probabilities, which Gemini rejects.
+
+            DeepEval falls back to a plain scored answer when this raises AttributeError.
+            """
+
+            def generate_raw_response(self, *args: Any, **kwargs: Any) -> Any:
+                raise AttributeError("log_probs unsupported")
+
+            async def a_generate_raw_response(self, *args: Any, **kwargs: Any) -> Any:
+                raise AttributeError("log_probs unsupported")
+
+        litellm.drop_params = True  # drop other params a judge provider does not support
         self.cfg = cfg
         self._throttle = throttle or Throttle(rpm=cfg.rpm)
         self._max_attempts = max_attempts
         self._sleep = sleep
         self._lock = threading.Lock()  # metric objects hold state; one judgement at a time
         api_key = os.environ.get(cfg.api_key_env) if cfg.api_key_env else None
-        model = LiteLLMModel(
+        model = NoLogprobLiteLLM(
             model=cfg.model, api_key=api_key, base_url=cfg.api_base, temperature=cfg.temperature
         )
         self._metrics: dict[str, Any] = {}

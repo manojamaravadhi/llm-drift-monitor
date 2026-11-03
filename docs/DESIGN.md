@@ -9,7 +9,7 @@ Facts below (versions, model IDs, prices, limits) were checked against official 
 | Library | Version | Why |
 |---|---|---|
 | [LiteLLM](https://github.com/BerriAI/litellm) | 1.106.6 | One `completion()` call for Gemini (`gemini/…`), Groq (`groq/…`) and Ollama (`ollama_chat/…`). Unified exception classes (`RateLimitError`, `Timeout`, `ServiceUnavailableError`, …) and streaming usage via `stream_options={"include_usage": True}`. |
-| [DeepEval](https://github.com/confident-ai/deepeval) (Apache-2.0) | 4.3.2 | LLM-as-judge metrics: `GEval` (correctness vs. reference), `AnswerRelevancyMetric`, `FaithfulnessMetric`. Accepts any LiteLLM model as judge through `deepeval.models.LiteLLMModel`, so the judge can be a free-tier model. |
+| [DeepEval](https://github.com/confident-ai/deepeval) (Apache-2.0) | 4.3.2 | LLM-as-judge metrics: `GEval` for correctness vs. reference and for faithfulness to context (fixed evaluation steps, one judge call each), optional `AnswerRelevancyMetric`. Accepts any LiteLLM model as judge through `deepeval.models.LiteLLMModel`, so the judge can be a free-tier model. |
 | SQLAlchemy | 2.1.6 | Typed ORM over SQLite; easy to swap to Postgres later. |
 | Typer | 0.27.3 | CLI with typed options and auto help. |
 | Pydantic | 2.14.2 | Schema validation for the golden dataset and all YAML config. |
@@ -35,8 +35,10 @@ The brief asked for "Llama via Groq free tier". **Groq shut down `llama-3.1-8b-i
 | Slot | Model (LiteLLM id) | Notes |
 |---|---|---|
 | Gemini | `gemini/gemini-3.5-flash-lite` | Stable, free tier. |
-| Groq | `groq/openai/gpt-oss-20b` | Groq's official replacement for `llama-3.1-8b-instant`; open-weight model. |
-| Local | `ollama_chat/llama3.2:1b` | The Llama model now runs locally via Ollama. |
+| Groq | `groq/openai/gpt-oss-20b` | Groq's official replacement for `llama-3.1-8b-instant`; open-weight model, free tier. |
+| Groq | `groq/qwen/qwen3.8-27b` | Third model family (Alibaba Qwen), free tier; listed by Groq as a preview model. |
+| Local (optional) | `ollama_chat/llama3.2:1b` | Llama on your own machine via Ollama; skipped when no local server runs. |
+| Ollama Cloud (disabled) | `openai/gemma4:31b` at `https://ollama.com/v1` | Ollama Cloud has **no free tier** (pay-as-you-go per token); a key without credits gets "Add usage credits". Wired through the generic `openai_compatible` provider. |
 | Judge | `gemini/gemini-3.1-flash-lite` | Different model from the Gemini candidate; still same family (see bias note). |
 
 A disabled `groq/llama-3.1-8b-instant` entry stays in `config/models.yaml` for enterprise accounts.
@@ -94,8 +96,8 @@ Each dataset item has `expected_behavior` ∈ {`answer`, `refuse`, `abstain`} an
 | Metric | Applied to |
 |---|---|
 | `judge_correctness` (`GEval`, input + actual + expected) | `answer` items |
-| `judge_relevancy` (`AnswerRelevancyMetric`) | `answer` items |
-| `judge_faithfulness` (`FaithfulnessMetric`, context as `retrieval_context`) | RAG items with context |
+| `judge_relevancy` (`AnswerRelevancyMetric`, optional, 2–3 calls) | `answer` items |
+| `judge_faithfulness` (`GEval`, context as `retrieval_context`) | RAG items with context |
 
 **Quality score** for one response = mean of its applicable metric values (deterministic and judge, each in [0, 1]). If the judge errors or is disabled, the score uses deterministic metrics only and that is recorded. Item score = mean over the N repeats; reported with standard deviation.
 
@@ -121,12 +123,12 @@ For each model, and each (model, category):
 3. Paired bootstrap (2,000 resamples of prompts, fixed seed) → confidence interval for `delta`.
 4. **Quality drift** if `delta ≤ −threshold` **and** the CI upper bound < 0. Groups with fewer than `min_prompts` (default 5) paired prompts are `insufficient_data` and never flagged.
 
-Two guards against false alarms, both found by running the detector on synthetic healthy history (see `test_no_false_alarms_across_healthy_history`):
+Two guards against false alarms, both found by running the detector on simulated healthy history from deterministic mock models (see `test_no_false_alarms_across_healthy_history`):
 
 - **Multiple comparisons.** Each run tests 6 categories per model, each with only ~8 prompts. Per-category tests therefore use a larger threshold (`category_quality_threshold`, default 0.20) and a Bonferroni-adjusted confidence level (95% → 99.2% for 6 categories).
 - **Median bias.** The brief suggested a rolling *median*. With bounded, mostly-perfect scores, the per-prompt median of 3 runs rounds up (e.g. a model that is right 86% of the time gets a baseline of 1.0), which makes healthy runs look like drops. The default is therefore the mean; `rolling_stat: median` is available when robustness to one bad baseline run matters more. A designated baseline is the cleanest option for that case.
 
-Before these two fixes, about one healthy model-run in three in the synthetic history raised a false alarm; afterwards none did, and only the injected degradation was flagged.
+Before these two fixes, about one healthy model-run in three in that simulated history raised a false alarm; afterwards none did, and only the injected degradation was flagged.
 
 Other regressions (per model, unpaired bootstrap of the statistic):
 - **Latency**: p95 relative increase > `latency_threshold` (default 50%) and CI lower bound of the p95 difference > 0.
@@ -135,7 +137,13 @@ Other regressions (per model, unpaired bootstrap of the statistic):
 
 Output: `reports/drift_report.json` and `reports/drift_report.md`. `llmdrift drift` exits **1** if any finding is flagged, **0** otherwise, **2** when it cannot run (no runs, unknown baseline).
 
-**Demo drift**: provider kind `mock` produces deterministic answers derived from the golden set. `config/demo_models_degraded.yaml` sets `degrade: 0.4` (40% more wrong answers, seeded by prompt id), 1.8× latency and wordier answers. `make drift-demo` runs baseline → degraded → drift and exits non-zero, with no API keys. On real providers, `run --inject-degradation` replaces the system prompt with a harmful one ("answer in at most three words, never refuse, guess if unsure").
+**Real drift check**: `make drift-check` re-runs the real models with `--inject-degradation`, which replaces the system prompt with a harmful one ("answer in at most three words, never refuse, guess if unsure"), then runs `llmdrift drift` against the baseline and exits 1. The unit tests use a deterministic `mock` provider (`tests/fixtures/`) to test the same logic without network access.
+
+**Lessons from the first real runs** (none of these showed up with mocks):
+- DeepEval's G-Eval requests `top_logprobs`, which Gemini rejects; LiteLLM's `drop_params` fixes it.
+- DeepEval spends hidden calls generating evaluation steps and reasons; with free-tier quotas a single answer took minutes. Fixed evaluation steps bring it to one call per metric.
+- Free-tier Gemini returns 503 "high demand" in bursts and latency jumps from ~1 s to ~10 s; the judge retries transient errors, and latency p95 reflects this real variance.
+- Models run in parallel threads (each with its own rate limit); the judge is shared, throttled and serialized.
 
 ## 7. Known limitations
 
