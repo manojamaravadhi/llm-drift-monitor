@@ -4,7 +4,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     DEEPEVAL_TELEMETRY_OPT_OUT=1 \
-    LLMDRIFT_DB=/app/data/demo.db
+    LLMDRIFT_DB=/app/data/results.db
 
 WORKDIR /app
 COPY pyproject.toml README.md ./
@@ -15,7 +15,6 @@ COPY config ./config
 COPY datasets ./datasets
 COPY dashboard ./dashboard
 COPY .streamlit ./.streamlit
-COPY data/demo.db ./data/demo.db
 
 RUN useradd --create-home app && chown -R app /app
 USER app

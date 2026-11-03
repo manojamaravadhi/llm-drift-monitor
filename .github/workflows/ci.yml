@@ -35,14 +35,6 @@ jobs:
         run: llmdrift validate-dataset
       - name: Tests (no network)
         run: pytest --cov --cov-report=term-missing --cov-report=xml --cov-fail-under=80
-      - name: Offline drift demo must fail on injected degradation
-        run: |
-          set +e
-          make drift-demo BIN="$(dirname "$(which python)")"
-          code=$?
-          set -e
-          if [ "$code" -eq 0 ]; then echo "drift demo should exit non-zero"; exit 1; fi
-          echo "drift demo exited $code as expected"
       - uses: actions/upload-artifact@v7
         with:
           name: coverage

@@ -4,7 +4,7 @@ VENV   := .venv
 BIN    := $(VENV)/bin
 export DEEPEVAL_TELEMETRY_OPT_OUT := 1
 
-.PHONY: setup test lint format typecheck check run report drift demo demo-db drift-demo \
+.PHONY: setup test lint format typecheck check run report drift drift-check \
         dashboard screenshots integration validate docker clean
 
 setup: ## Create .venv and install the package with dev tools
@@ -42,26 +42,16 @@ report:
 drift: ## Drift check on the latest run; exits 1 if drift is found
 	$(BIN)/llmdrift drift
 
-dashboard: ## Dashboard on data/results.db (falls back to the demo DB)
+dashboard: ## Dashboard on data/results.db (real results from `make run`)
 	$(BIN)/streamlit run dashboard/app.py
 
-demo: ## Dashboard on the bundled synthetic demo DB (no keys needed)
-	LLMDRIFT_DB=data/demo.db $(BIN)/streamlit run dashboard/app.py
-
-demo-db: ## Regenerate data/demo.db (synthetic, offline)
-	$(BIN)/python scripts/seed_demo_db.py
-
-drift-demo: ## Offline drift demo: healthy baseline, degraded run, drift check (exits 1)
-	rm -f data/drift_demo.db*
-	$(BIN)/llmdrift --models-config config/demo_models.yaml --db data/drift_demo.db \
-		run --no-judge --mark-baseline --label "demo baseline"
-	$(BIN)/llmdrift --models-config config/demo_models_degraded.yaml --db data/drift_demo.db \
-		run --no-judge --no-cache --label "demo degraded"
-	$(BIN)/llmdrift --db data/drift_demo.db drift
+drift-check: ## Real drift check: re-run with a harmful system prompt, then compare (exits 1)
+	$(BIN)/llmdrift run --fresh --no-cache --runs 1 --inject-degradation --label "injected degradation"
+	$(BIN)/llmdrift drift
 
 screenshots: ## Regenerate docs/screenshots (needs Chrome and the docs extra)
 	$(BIN)/pip install -e ".[docs]"
-	LLMDRIFT_DB=data/demo.db $(BIN)/streamlit run dashboard/app.py --server.port 8599 & \
+	$(BIN)/streamlit run dashboard/app.py --server.port 8599 & \
 		PID=$$!; sleep 8; $(BIN)/python scripts/screenshots.py --url http://localhost:8599; \
 		kill $$PID
 
@@ -72,4 +62,4 @@ docker: ## Build and start the dashboard container
 	docker compose up --build
 
 clean:
-	rm -rf .pytest_cache .mypy_cache .ruff_cache .coverage htmlcov data/drift_demo.db*
+	rm -rf .pytest_cache .mypy_cache .ruff_cache .coverage htmlcov

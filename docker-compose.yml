@@ -4,8 +4,8 @@ services:
     ports:
       - "8501:8501"
     environment:
-      # Point at /app/data/results.db to view your own runs (mounted below).
-      LLMDRIFT_DB: ${LLMDRIFT_DB:-/app/data/demo.db}
+      # Results from `make run` on the host (./data is mounted below).
+      LLMDRIFT_DB: ${LLMDRIFT_DB:-/app/data/results.db}
     volumes:
       - ./data:/app/data
 

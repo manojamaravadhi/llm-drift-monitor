@@ -64,7 +64,7 @@ jobs:
         run: |
           FLAGS="--no-cache --fresh --label weekly-ci"
           if [ "${{ inputs.inject_degradation }}" = "true" ]; then FLAGS="$FLAGS --inject-degradation"; fi
-          llmdrift run --models gemini-3.5-flash-lite,groq-gpt-oss-20b $FLAGS
+          llmdrift run --models gemini-3.5-flash-lite,groq-gpt-oss-20b,groq-qwen3.8-27b $FLAGS
           llmdrift report
 
       - name: Drift check

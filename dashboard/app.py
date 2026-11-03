@@ -56,11 +56,8 @@ st.markdown(
 
 # ----------------------------------------------------------------------------- data
 def default_db() -> str:
-    """LLMDRIFT_DB, else the real results DB if it exists, else the bundled demo DB."""
-    if os.environ.get("LLMDRIFT_DB"):
-        return os.environ["LLMDRIFT_DB"]
-    real = ROOT / "data" / "results.db"
-    return str(real if real.exists() else ROOT / "data" / "demo.db")
+    """LLMDRIFT_DB, else data/results.db (written by ``llmdrift run``)."""
+    return os.environ.get("LLMDRIFT_DB") or str(ROOT / "data" / "results.db")
 
 
 def _mtime(path: str) -> float:
@@ -144,8 +141,7 @@ if not Path(db_path).exists():
     st.title("LLM Model Comparison & Drift Monitor")
     st.info(
         f"No database at `{db_path}`.\n\n"
-        "- Demo data (no API keys): `make demo`\n"
-        "- Real evaluation: add keys to `.env`, then `make run`"
+        "Add free API keys to `.env` (see README), then run `make run`."
     )
     st.stop()
 
@@ -155,8 +151,7 @@ completed = runs[runs["status"] == "completed"]
 if completed.empty or results.empty:
     st.title("LLM Model Comparison & Drift Monitor")
     st.info(
-        "The database has no completed runs yet. Run `make run` (needs API keys) or "
-        "`make demo` to load the synthetic demo history."
+        "The database has no completed runs yet. Add free API keys to `.env`, then run `make run`."
     )
     st.stop()
 
@@ -179,7 +174,6 @@ cats_sel = st.sidebar.multiselect("Categories", categories, default=categories)
 st.sidebar.caption(f"{len(completed)} completed runs · {len(all_models)} models")
 
 run_row = completed.set_index("run_id").loc[run_id]
-is_synthetic = bool(run_row["synthetic"])
 
 view = results[
     (results["run_id"] == run_id)
@@ -196,14 +190,6 @@ badges = [
     f"<span class='badge'>{run_row['started_at']:%Y-%m-%d %H:%M} UTC</span>",
 ]
 st.markdown(" ".join(badges), unsafe_allow_html=True)
-if is_synthetic:
-    st.warning(
-        "**Synthetic demo data.** These runs were generated offline by mock models "
-        "(`scripts/seed_demo_db.py`). The numbers are invented and say nothing about real "
-        "Gemini, Groq or Ollama models.",
-        icon="🧪",
-    )
-
 report, drift_err = get_drift(db_path, mtime, run_id, drift_cfg_json)
 if report is not None and report.drift_detected:
     flagged_models = sorted({f.model for f in report.flagged})
@@ -214,6 +200,33 @@ if report is not None and report.drift_detected:
     )
 elif report is not None:
     st.success(f"No drift vs baseline ({report.baseline_mode}).", icon="✅")
+
+run_cfg = json.loads(str(run_row["config_json"]))
+with st.expander("Models and judge used in this run", expanded=True):
+    model_rows = [
+        {
+            "Model": m["name"],
+            "Provider": m["provider"],
+            "Model id (LiteLLM)": m["model"],
+            "Streaming": m.get("stream", False),
+        }
+        for m in run_cfg.get("models", [])
+    ]
+    st.dataframe(pd.DataFrame(model_rows), hide_index=True, use_container_width=True)
+    judge = run_cfg.get("judge", {})
+    gen = run_cfg.get("generation", {})
+    judge_text = (
+        f"**Judge (LLM-as-judge):** `{judge.get('model')}` via DeepEval, temperature "
+        f"{judge.get('temperature')}, metrics: {', '.join(judge.get('metrics', []))}"
+        if judge.get("enabled", True) and judge.get("model")
+        else "**Judge:** off (deterministic checks only)"
+    )
+    st.markdown(
+        f"{judge_text}  \n**Sampling:** {gen.get('repeats')} repeats per prompt, temperature "
+        f"{gen.get('temperature')}, max {gen.get('max_tokens')} tokens · "
+        f"**Dataset:** {run_cfg.get('n_items')} prompts"
+        + (" · **Injected degradation: ON**" if run_cfg.get("inject_degradation") else "")
+    )
 
 tabs = st.tabs(
     ["Overview", "Quality · cost · latency", "By category", "Drift", "Drill-down", "Run history"]
@@ -555,7 +568,6 @@ with tabs[5]:
         "label",
         "git_commit",
         "is_baseline",
-        "synthetic",
         *[m for m in all_models if m in hist.columns],
     ]
     st.dataframe(hist[show_cols].iloc[::-1], hide_index=True, use_container_width=True)
