@@ -24,6 +24,8 @@ make run                   # evaluates all available models (roughly 10-20 min o
 make dashboard             # http://localhost:8501
 ```
 
+Try a single request first with `llmdrift ask "your question"`: every model answers side by side with latency, tokens and cost. Step-by-step manual usage (requests, stored responses, SQL, dashboard tabs): [docs/USAGE.md](docs/USAGE.md).
+
 `make drift` checks the latest run against the baseline (exit 1 on drift). `make drift-check` re-runs the models with a deliberately harmful system prompt and shows a real drift alert.
 
 ## Models and judge
@@ -114,6 +116,7 @@ llmdrift run [--models a,b] [--categories rag,safety] [--runs 3] [--no-cache] [-
 llmdrift report [--run ID]
 llmdrift drift [--run ID] [--baseline ID]        # exit 0 ok, 1 drift, 2 cannot run
 llmdrift export [--run ID] --format csv|jsonl|json --out FILE
+llmdrift ask "question" [--models a,b] [--context TEXT]   # one request, responses printed
 llmdrift validate-dataset | list-runs | set-baseline ID
 ```
 

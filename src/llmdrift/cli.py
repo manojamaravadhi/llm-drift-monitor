@@ -285,6 +285,60 @@ def export(
     typer.secho(f"wrote {len(results)} rows to {out}", fg="green")
 
 
+@app.command()
+def ask(
+    ctx: typer.Context,
+    prompt: Annotated[str, typer.Argument(help="Any question or instruction.")],
+    models: Annotated[list[str] | None, typer.Option(help="Model names (comma list).")] = None,
+    context: Annotated[
+        str | None, typer.Option(help="Optional context to answer from (RAG style).")
+    ] = None,
+) -> None:
+    """Send one prompt to each model and print the responses (nothing is stored)."""
+    from llmdrift.datasets.schema import Category, GoldenItem
+    from llmdrift.metrics.cost import compute_cost
+    from llmdrift.prompting import build_request
+    from llmdrift.providers.base import ProviderError
+    from llmdrift.providers.registry import build_provider, check_available
+
+    c: Ctx = ctx.obj
+    gen = c.eval_cfg.generation
+    pricing = load_pricing(c.pricing_path)
+    item = GoldenItem(
+        id="ask-001",
+        category=Category.RAG if context else Category.FACTUAL,
+        prompt=prompt if len(prompt) >= 5 else f"{prompt}     ",
+        reference_answer="n/a",
+        context=context,
+        accept=["n/a"],
+    )
+    wanted = _split(models)
+    for cfg in load_models(c.models_path):
+        if wanted and cfg.name not in wanted:
+            continue
+        ok, reason = check_available(cfg)
+        if not ok:
+            typer.secho(f"-- {cfg.name}: skipped ({reason})", fg="yellow")
+            continue
+        request = build_request(item, gen.system_prompt, gen.temperature, gen.max_tokens, 0)
+        try:
+            result = build_provider(cfg, [item]).generate(request)
+        except ProviderError as exc:
+            typer.secho(f"-- {cfg.name}: {exc.kind}: {str(exc)[:200]}", fg="red")
+            continue
+        cost = compute_cost(result.input_tokens, result.output_tokens, pricing.get(cfg.model))
+        list_cost = f"${cost.list_price:.6f}" if cost.list_price is not None else "n/a"
+        typer.secho(f"-- {cfg.name} ({cfg.model})", fg="cyan", bold=True)
+        typer.echo(result.text.strip())
+        typer.secho(
+            f"   {result.latency_ms:.0f} ms"
+            + (f", first token {result.ttft_ms:.0f} ms" if result.ttft_ms else "")
+            + f", tokens {result.input_tokens} in / {result.output_tokens} out"
+            + f", billed ${cost.billed:.6f}, list price {list_cost}\n",
+            fg="bright_black",
+        )
+
+
 @app.command("list-runs")
 def list_runs(ctx: typer.Context) -> None:
     """List runs in the database."""

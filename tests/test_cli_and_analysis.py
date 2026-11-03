@@ -108,3 +108,12 @@ def test_analysis_on_empty_db(tmp_path: Path) -> None:
     assert load_runs(engine).empty and load_results(engine).empty and load_metrics(engine).empty
     assert leaderboard(load_results(engine)).empty
     assert category_matrix(load_results(engine)).empty
+
+
+@pytest.mark.usefixtures("chdir_root")
+def test_ask_prints_each_model(tmp_path: Path) -> None:
+    result = _invoke(tmp_path / "x.db", "ask", "What is the chemical symbol for gold?")
+    assert result.exit_code == 0, result.output
+    assert "mock-good" in result.output and "mock-fast" in result.output
+    skipped = _invoke(tmp_path / "x.db", "ask", "Hi there", models="config/models.yaml")
+    assert "skipped" in skipped.output
