@@ -14,8 +14,10 @@ build/
 dist/
 data/*.db
 !data/demo.db
+!data/results.db
 data/*.db-*
 reports/*
 !reports/.gitkeep
 .deepeval/
 .DS_Store
+.claude/

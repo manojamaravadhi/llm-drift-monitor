@@ -48,7 +48,7 @@ def test_dashboard_renders_runs_with_drift(
     assert not at.exception, at.exception
     assert any("Drift detected" in e.value for e in at.error)
     assert any("Judge" in m.value for m in at.markdown)
-    assert len(at.tabs) == 6
+    assert len(at.tabs) == 7
 
 
 def test_dashboard_handles_empty_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

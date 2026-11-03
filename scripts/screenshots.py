@@ -15,6 +15,7 @@ from playwright.sync_api import Page, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 TABS = {
+    "live": "Try it live",
     "overview": "Overview",
     "scatter": "Quality · cost · latency",
     "heatmap": "By category",

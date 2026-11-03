@@ -78,7 +78,7 @@ def main(
         format="%(asctime)s %(levelname)s %(message)s",
     )
     # LiteLLM logs request details at INFO; keep it quiet so nothing sensitive is printed.
-    logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+    logging.getLogger("LiteLLM").setLevel(logging.ERROR)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     ctx.obj = Ctx(models_config, eval_config, pricing_config, db)
 
@@ -294,47 +294,30 @@ def ask(
         str | None, typer.Option(help="Optional context to answer from (RAG style).")
     ] = None,
 ) -> None:
-    """Send one prompt to each model and print the responses (nothing is stored)."""
-    from llmdrift.datasets.schema import Category, GoldenItem
-    from llmdrift.metrics.cost import compute_cost
-    from llmdrift.prompting import build_request
-    from llmdrift.providers.base import ProviderError
-    from llmdrift.providers.registry import build_provider, check_available
+    """Send one prompt to each model in parallel and print the responses (nothing stored)."""
+    from llmdrift.live import ask_models
 
     c: Ctx = ctx.obj
-    gen = c.eval_cfg.generation
-    pricing = load_pricing(c.pricing_path)
-    item = GoldenItem(
-        id="ask-001",
-        category=Category.RAG if context else Category.FACTUAL,
-        prompt=prompt if len(prompt) >= 5 else f"{prompt}     ",
-        reference_answer="n/a",
-        context=context,
-        accept=["n/a"],
-    )
     wanted = _split(models)
-    for cfg in load_models(c.models_path):
-        if wanted and cfg.name not in wanted:
+    chosen = [m for m in load_models(c.models_path) if not wanted or m.name in wanted]
+    answers = ask_models(
+        chosen, prompt, c.eval_cfg.generation, load_pricing(c.pricing_path), context
+    )
+    for a in answers:
+        if a.skipped:
+            typer.secho(f"-- {a.model_name}: skipped ({a.skipped})", fg="yellow")
             continue
-        ok, reason = check_available(cfg)
-        if not ok:
-            typer.secho(f"-- {cfg.name}: skipped ({reason})", fg="yellow")
+        if a.error:
+            typer.secho(f"-- {a.model_name}: {a.error}", fg="red")
             continue
-        request = build_request(item, gen.system_prompt, gen.temperature, gen.max_tokens, 0)
-        try:
-            result = build_provider(cfg, [item]).generate(request)
-        except ProviderError as exc:
-            typer.secho(f"-- {cfg.name}: {exc.kind}: {str(exc)[:200]}", fg="red")
-            continue
-        cost = compute_cost(result.input_tokens, result.output_tokens, pricing.get(cfg.model))
-        list_cost = f"${cost.list_price:.6f}" if cost.list_price is not None else "n/a"
-        typer.secho(f"-- {cfg.name} ({cfg.model})", fg="cyan", bold=True)
-        typer.echo(result.text.strip())
+        list_cost = f"${a.list_usd:.6f}" if a.list_usd is not None else "n/a"
+        typer.secho(f"-- {a.model_name} ({a.model_id})", fg="cyan", bold=True)
+        typer.echo(a.text or "")
+        ttft = f", first token {a.ttft_ms:.0f} ms" if a.ttft_ms else ""
+        flags = " [refused]" if a.refused else ""
         typer.secho(
-            f"   {result.latency_ms:.0f} ms"
-            + (f", first token {result.ttft_ms:.0f} ms" if result.ttft_ms else "")
-            + f", tokens {result.input_tokens} in / {result.output_tokens} out"
-            + f", billed ${cost.billed:.6f}, list price {list_cost}\n",
+            f"   {a.latency_ms:.0f} ms{ttft}, tokens {a.input_tokens} in / {a.output_tokens} "
+            f"out, billed ${a.billed_usd or 0:.6f}, list price {list_cost}{flags}\n",
             fg="bright_black",
         )
 

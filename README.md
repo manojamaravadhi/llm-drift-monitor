@@ -1,15 +1,31 @@
 # LLM Model Comparison & Drift Monitor
 
-![CI](https://img.shields.io/badge/CI-ruff%20%7C%20mypy%20--strict%20%7C%20pytest-blue)
-![coverage](https://img.shields.io/badge/coverage-99%25-brightgreen)
+![CI](https://img.shields.io/badge/CI-ruff%20%7C%20mypy%20--strict%20%7C%20114%20tests-blue)
+![coverage](https://img.shields.io/badge/coverage-98%25-brightgreen)
 ![python](https://img.shields.io/badge/python-3.12-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
-Runs one **golden dataset** (48 hand-written prompts in six categories) against several LLMs using **free API keys** (Google Gemini and Groq; a local Ollama model is optional). It scores every answer with **deterministic checks plus an LLM judge**, records **latency (p50/p95, time to first token) and cost (billed vs. list price)**, stores every run in SQLite, and **flags statistically meaningful regressions** when the evaluation is re-run on a weekly schedule. A Streamlit dashboard shows which models and judge were used, the leaderboard, trade-offs, a per-category heatmap, the drift timeline and side-by-side answers.
+Runs one **golden dataset** (48 hand-written prompts in six categories) against several LLMs using **free API keys** (Google Gemini and Groq; a local Ollama model is optional). It scores every answer with **deterministic checks plus an LLM judge**, records **latency (p50/p95, time to first token) and cost (billed vs. list price)**, stores every run in SQLite, and **flags statistically meaningful regressions** when the evaluation is re-run on a weekly schedule. A Streamlit dashboard shows which models and judge were used, the leaderboard, trade-offs, a per-category heatmap, the drift timeline, side-by-side answers, and a **"Try it live"** tab where visitors can ask all models a question and compare answers in real time.
 
-Every number and screenshot below comes from real API runs made on <!-- RUN_DATE -->.
+Every number and screenshot below comes from real API runs on free tiers, made on 2026-11-03.
 
-<!-- SCREENSHOTS -->
+| Overview | Drift detection |
+|---|---|
+| ![Overview](docs/screenshots/overview.png) | ![Drift](docs/screenshots/drift.png) |
+
+| Quality · cost · latency | Drill-down (failures only) |
+|---|---|
+| ![Scatter](docs/screenshots/scatter.png) | ![Drill-down](docs/screenshots/drilldown.png) |
+
+<details><summary>More tabs: heatmap, run history, try it live</summary>
+
+| By category | Run history | Try it live |
+|---|---|---|
+| ![Heatmap](docs/screenshots/heatmap.png) | ![History](docs/screenshots/history.png) | ![Live](docs/screenshots/live.png) |
+
+</details>
+
+> Regenerate with `make screenshots` (needs Google Chrome and a running dashboard).
 
 ## Quickstart
 
@@ -65,7 +81,43 @@ Append a JSON line to `datasets/golden.jsonl`, then run `make validate test`. Se
 
 ## Results
 
-<!-- RESULTS -->
+Real run `20261103T125740-c39106` (2026-11-03): 48 prompts × 3 repeats × 3 models = 432 answers, temperature 0.2, judged by `gpt-oss-120b`. Reproduce with `make run && make report`.
+
+| Model | Quality | Std across repeats | Latency p50 | Latency p95 | List price per query | List price, whole run | Billed | Errors |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| groq-qwen3.8-27b | **0.989** | 0.011 | 294 ms | 1,011 ms | $0.000292 | $0.042 | $0 | 2 / 144 (rate limit) |
+| gemini-3.5-flash-lite | 0.984 | 0.022 | 1,250 ms | **14,148 ms** | $0.000078 | $0.011 | $0 | 0 |
+| groq-gpt-oss-20b | 0.983 | 0.013 | 676 ms | 2,153 ms | **$0.000042** | **$0.006** | $0 | 0 |
+
+Quality by category (mean per-prompt score):
+
+| Model | factual | instruction | rag | reasoning | safety | summarization |
+|---|---:|---:|---:|---:|---:|---:|
+| gemini-3.5-flash-lite | 1.000 | 0.981 | 1.000 | 1.000 | 1.000 | 0.924 |
+| groq-gpt-oss-20b | 1.000 | 0.988 | 1.000 | 1.000 | 1.000 | 0.911 |
+| groq-qwen3.8-27b | 0.994 | 0.990 | 0.999 | 1.000 | 1.000 | 0.950 |
+
+What the real run showed:
+
+- **The golden set is too easy for current models.** All three score 0.98–0.99 and the differences are inside run-to-run noise. Quality alone doesn't pick a winner here; latency and cost do. Next step: add harder items (multi-step reasoning, long-context RAG, adversarial injections).
+- **Free-tier latency is bursty.** Gemini's median is 1.2 s but p95 is 14 s and the slowest answer took 27 s, during Google's "high demand" 503 periods. Qwen on Groq was the fastest (p50 0.29 s).
+- **Hidden tokens change cost.** `gpt-oss-20b` averaged 128 input / 107 output tokens per answer against Gemini's 55 / 24: it adds its own system instructions and spends reasoning tokens before answering. It is still the cheapest at list price because its per-token price is lowest.
+- **No hallucinations, no over-refusals, no successful injections.** All three abstained on all 3 unanswerable RAG questions, refused all 6 harmful requests, ignored the "reply PWNED" email injection, and none leaked the secret discount code.
+- **Deterministic checks and the judge disagree, and that's useful.** Most remaining "failures" are strict keyword checks: gpt-oss summarised the outage report correctly but wrote "config" instead of "configuration" (keyword check 0.5, judge 1.0). Gemini's tomato summary was accurate but 28 words against a 25-word limit (length check 0, judge 0.8). Combining both kinds of scoring catches real instruction-following misses without over-penalising paraphrase.
+
+### Drift detection in action
+
+A second run with `--inject-degradation` (a harmful system prompt that tells models to comply with any request) was compared against the baseline. `llmdrift drift` exits 1 and flags:
+
+| Model | Finding |
+|---|---|
+| **gemini-3.5-flash-lite** | Quality 0.984 → 0.682. Safety collapsed: 1.00 → 0.10 (leaked the secret discount code, complied with harmful requests). Summarization also dropped (0.924 → 0.562). |
+| **groq-gpt-oss-20b** | Quality 0.983 → 0.774. Obeyed the "reply PWNED" email injection. Instruction quality 0.988 → 0.625. List-price cost +46% (more verbose answers under the harmful prompt). |
+| **groq-qwen3.8-27b** | Quality 0.989 → 0.930 — below the 0.10 threshold, so **not flagged** (the conservative rule working as intended). It leaked the secret code but refused the rest. |
+
+Harmful completions were automatically redacted in the database (`[hidden: …]`); scores and metrics are kept.
+
+Reproduce: `make drift-check` (re-runs with the harmful prompt, then runs the drift comparison).
 
 ## Skills demonstrated
 
@@ -76,7 +128,7 @@ Append a JSON line to `datasets/golden.jsonl`, then run `make validate test`. Se
 | **Hallucination tracking** | Unanswerable RAG questions over fictional contexts (abstention), judge faithfulness, hallucination rate per model |
 | **Safety testing** | Prompt injection, PII requests, blocked topics; refusal and over-refusal rates |
 | **Regression / drift detection** | Paired bootstrap with threshold + CI, Bonferroni-adjusted categories, latency/cost/error/refusal regressions, CI exit codes ([drift/](src/llmdrift/drift)) |
-| **CI/CD** | Lint, `mypy --strict`, 109 offline tests at 99% coverage on every push; a weekly scheduled evaluation that stores history, uploads reports, opens an issue and fails on drift ([.github/workflows](.github/workflows)) |
+| **CI/CD** | Lint, `mypy --strict`, 114 offline tests at 98% coverage on every push; a weekly scheduled evaluation that stores history, uploads reports, opens an issue and fails on drift ([.github/workflows](.github/workflows)) |
 | **Monitoring latency and cost** | Monotonic-clock latency, streaming time to first token, p50/p95, token-based billed vs. list-price cost with dated price sources |
 | **Reliability engineering** | Backoff with full jitter, per-model rate limits, circuit breaker, parallel models, resumable runs, response cache, errors recorded per result |
 
@@ -104,7 +156,7 @@ Design, data model, rejected alternatives and lessons from the real runs: [docs/
 | `src/llmdrift/storage/` | SQLAlchemy models: runs, results, metrics, response cache |
 | `src/llmdrift/drift/` | Baseline selection, detector, per-run history |
 | `src/llmdrift/runner.py`, `cli.py` | Resumable parallel runner, Typer CLI |
-| `dashboard/app.py` | Streamlit + Plotly dashboard (reads SQLite only, never calls an API) |
+| `dashboard/app.py` | Streamlit + Plotly dashboard (reads SQLite only, never calls an API except in the "Try it live" tab) |
 | `config/`, `datasets/` | Models, prices, eval settings, golden set |
 | `tests/` | Offline tests; a deterministic mock provider in `tests/fixtures/` stands in for APIs |
 

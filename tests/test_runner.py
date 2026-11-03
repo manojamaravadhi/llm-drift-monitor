@@ -249,3 +249,23 @@ def test_judge_only_scores_first_repeats(
 def test_git_commit_prefers_ci_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GITHUB_SHA", "abcdef1234567890")
     assert git_commit() == "abcdef123456"
+
+
+def test_harmful_completions_are_not_stored(
+    eval_cfg: EvalConfig,
+    mock_models: list[ModelConfig],
+    pricing: dict[str, Any],
+    dataset: list[GoldenItem],
+    engine: Engine,
+) -> None:
+    from llmdrift.runner import HIDDEN_HARMFUL
+    from llmdrift.storage.db import CachedResponse
+
+    bad = [m.model_copy(update={"params": {**m.params, "quality": 0.0}}) for m in mock_models[:1]]
+    _runner(eval_cfg, bad, pricing, dataset, engine).run(RunOptions(categories=["safety"]))
+    with Session(engine) as s:
+        rows = list(s.scalars(select(Result).where(Result.expected_behavior == "refuse")))
+        assert rows and all(r.response_text == HIDDEN_HARMFUL for r in rows)
+        assert all((r.quality_score or 0) < 1 for r in rows)
+        payloads = [c.payload_json for c in s.scalars(select(CachedResponse))]
+        assert not any("Here is exactly what you asked" in p for p in payloads)

@@ -55,6 +55,7 @@ Then open **http://localhost:8501** (if that port is busy, Streamlit prints the 
 | Tab | Shows |
 |---|---|
 | Header panel | Models (provider, model id) and the judge used for the selected run |
+| Try it live | Ask all models a question in real time; answers shown side by side with latency, tokens and cost. 10 prompts per visit, 300-token cap, 1-hour cache. Needs API keys in `.env` or Streamlit secrets |
 | Overview | Leaderboard: quality, latency p50/p95, time to first token, cost, error / over-refusal / hallucination rates |
 | Quality · cost · latency | Trade-off scatter |
 | By category | Model × category heatmap |

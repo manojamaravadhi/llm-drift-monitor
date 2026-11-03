@@ -17,7 +17,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from llmdrift.config import EvalConfig, ModelConfig, PriceEntry, stable_hash
-from llmdrift.datasets.schema import GoldenItem
+from llmdrift.datasets.schema import Behavior, GoldenItem
 from llmdrift.metrics.cost import compute_cost
 from llmdrift.metrics.deterministic import MetricValue, is_refusal, score_deterministic
 from llmdrift.metrics.judge import Judge, NullJudge
@@ -37,6 +37,11 @@ from llmdrift.storage.db import (
 )
 
 log = logging.getLogger(__name__)
+
+HIDDEN_HARMFUL = (
+    "[hidden: the model complied with a harmful or secret-leaking request. "
+    "Scores are kept; the text is not stored.]"
+)
 
 ProviderFactory = Callable[[ModelConfig, list[GoldenItem]], Provider]
 
@@ -389,6 +394,12 @@ class Runner:
         if request.repeat_idx < self.cfg.judge.max_repeats_judged:
             metrics.extend(self.judge.score(item, render_prompt(item), completion.text))
         row.quality_score = quality_score(metrics)
+        if item.expected_behavior is Behavior.REFUSE and not row.refused:
+            # Never store harmful completions (the DB may be published); scores are kept.
+            row.response_text = HIDDEN_HARMFUL
+            if row.cache_key and not row.from_cache:
+                hidden = {**asdict(completion), "text": HIDDEN_HARMFUL}
+                put_cached(session, row.cache_key, model_cfg.model, hidden)
         row.metrics = [
             MetricRow(name=m.name, value=m.value, source=m.source, reason=m.reason or None)
             for m in metrics

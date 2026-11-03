@@ -24,10 +24,12 @@ from llmdrift.analysis import (
     load_runs,
     run_timeseries,
 )
-from llmdrift.config import DriftConfig, load_eval_config
+from llmdrift.config import DriftConfig, load_eval_config, load_models, load_pricing
 from llmdrift.drift.baseline import BaselineError, choose_baseline
 from llmdrift.drift.detector import DriftReport, detect_drift
 from llmdrift.drift.history import drift_history
+from llmdrift.live import ask_models
+from llmdrift.providers.registry import check_available
 from llmdrift.storage.db import get_engine
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +43,47 @@ GRID, AXIS, SURFACE = "#e1e0d9", "#c3c2b7", "#fcfcfb"
 BLUE_RAMP = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"]
 
 st.set_page_config(page_title="LLM Drift Monitor", page_icon="📈", layout="wide")
+
+LIVE_LIMIT = int(os.environ.get("LLMDRIFT_LIVE_LIMIT", "10"))  # prompts per visitor session
+LIVE_MAX_TOKENS = 300
+
+
+def load_keys() -> None:
+    """API keys from .env locally, or from Streamlit secrets when deployed."""
+    from dotenv import load_dotenv
+
+    if os.environ.get("LLMDRIFT_DOTENV", "1") == "0":  # tests: never load real keys
+        return
+    load_dotenv(ROOT / ".env")
+    try:
+        for key, value in st.secrets.items():
+            if key.endswith("_API_KEY") and isinstance(value, str):
+                os.environ.setdefault(key, value)
+    except Exception:  # no secrets file: running locally without secrets
+        pass
+
+
+load_keys()
+
+
+@st.cache_data(ttl=3600, max_entries=200, show_spinner=False)
+def live_ask(models: tuple[str, ...], prompt: str, context: str) -> list[dict[str, Any]]:
+    """Ask the chosen models once; identical prompts are served from cache for an hour."""
+    from dataclasses import asdict
+
+    cfg = load_eval_config(ROOT / "config" / "eval.yaml")
+    chosen = [m for m in load_models(ROOT / "config" / "models.yaml") if m.name in models]
+    answers = ask_models(
+        chosen,
+        prompt,
+        cfg.generation,
+        load_pricing(ROOT / "config" / "pricing.yaml"),
+        context or None,
+        max_tokens=LIVE_MAX_TOKENS,
+    )
+    return [asdict(a) for a in answers]
+
+
 st.markdown(
     """
     <style>
@@ -229,11 +272,93 @@ with st.expander("Models and judge used in this run", expanded=True):
     )
 
 tabs = st.tabs(
-    ["Overview", "Quality · cost · latency", "By category", "Drift", "Drill-down", "Run history"]
+    [
+        "Try it live",
+        "Overview",
+        "Quality · cost · latency",
+        "By category",
+        "Drift",
+        "Drill-down",
+        "Run history",
+    ]
 )
 
-# ----------------------------------------------------------------------------- 1 overview
+# ----------------------------------------------------------------------------- 0 live
 with tabs[0]:
+    st.markdown(
+        "Ask every model the same question right now. The request uses the same system "
+        "prompt and settings as the evaluation; answers are capped at "
+        f"{LIVE_MAX_TOKENS} tokens and are not stored."
+    )
+    live_models = [m for m in load_models(ROOT / "config" / "models.yaml") if m.enabled]
+    usable = [m.name for m in live_models if check_available(m)[0]]
+    if not usable:
+        st.info(
+            "No API keys are configured on this server, so live questions are off. "
+            "Run it locally with keys in `.env`, or add them as Streamlit secrets."
+        )
+    else:
+        used = int(st.session_state.get("live_used", 0))
+        with st.form("live"):
+            prompt = st.text_area(
+                "Prompt",
+                max_chars=500,
+                placeholder="e.g. What is the capital of Australia?",
+            )
+            context = st.text_area(
+                "Optional context: the model must answer only from this (tests hallucination)",
+                max_chars=1500,
+                placeholder="e.g. Kestrel Labs was founded in 2014 in Tallinn, Estonia.",
+            )
+            chosen = st.multiselect("Models", usable, default=usable)
+            submitted = st.form_submit_button("Ask all models", type="primary")
+        if submitted:
+            if not prompt.strip():
+                st.warning("Type a prompt first.")
+            elif not chosen:
+                st.warning("Pick at least one model.")
+            elif used >= LIVE_LIMIT:
+                st.warning(f"Limit of {LIVE_LIMIT} prompts per visit reached (free-tier quota).")
+            else:
+                st.session_state["live_used"] = used + 1
+                with st.spinner("Asking the models in parallel..."):
+                    answers = live_ask(tuple(chosen), prompt.strip(), context.strip())
+                answer_cols = st.columns(len(answers))
+                for col, ans in zip(answer_cols, answers, strict=True):
+                    with col:
+                        name = str(ans["model_name"])
+                        color = COLORS.get(name, MUTED)
+                        st.markdown(
+                            f"<span style='color:{color}'>●</span> **{name}**  \n"
+                            f"<span style='color:{MUTED};font-size:0.8rem'>"
+                            f"{ans['model_id']}</span>",
+                            unsafe_allow_html=True,
+                        )
+                        if ans["skipped"] or ans["error"]:
+                            st.error(str(ans["skipped"] or ans["error"]))
+                            continue
+                        badges = []
+                        if ans["refused"]:
+                            badges.append("refused")
+                        if ans["abstained"]:
+                            badges.append("said the context lacks the answer")
+                        st.container(border=True).markdown(str(ans["text"]))
+                        ttft = f" · first token {ans['ttft_ms']:.0f} ms" if ans["ttft_ms"] else ""
+                        st.caption(
+                            f"{ans['latency_ms']:.0f} ms{ttft} · {ans['input_tokens']} in / "
+                            f"{ans['output_tokens']} out tokens · billed "
+                            f"{fmt_money(ans['billed_usd'])} · list price "
+                            f"{fmt_money(ans['list_usd'])}"
+                            + (f" · {', '.join(badges)}" if badges else "")
+                        )
+        left = max(0, LIVE_LIMIT - int(st.session_state.get("live_used", 0)))
+        st.caption(
+            f"{left} of {LIVE_LIMIT} prompts left in this visit. Runs on free-tier API keys; "
+            "identical prompts are answered from a 1-hour cache."
+        )
+
+# ----------------------------------------------------------------------------- 1 overview
+with tabs[1]:
     board = leaderboard(view, view_metrics)
     if board.empty:
         st.info("No results for this selection.")
@@ -267,10 +392,10 @@ with tabs[0]:
                 "n_responses": "Responses",
             }
         )
-        cols = [c for c in table.columns if not c.endswith("_usd") and not c.startswith("n_")]
-        cols = [c for c in cols if c not in {"tokens_estimated_share"}]
+        shown = [c for c in table.columns if not c.endswith("_usd") and not c.startswith("n_")]
+        shown = [c for c in shown if c not in {"tokens_estimated_share"}]
         st.dataframe(
-            table[cols],
+            table[shown],
             hide_index=True,
             use_container_width=True,
             column_config={
@@ -298,7 +423,7 @@ with tabs[0]:
             st.caption("Some token counts were estimated with a tokenizer (provider gave none).")
 
 # ----------------------------------------------------------------------------- 2 scatter
-with tabs[1]:
+with tabs[2]:
     board = leaderboard(view, view_metrics)
     if board.empty:
         st.info("No results for this selection.")
@@ -351,7 +476,7 @@ with tabs[1]:
         )
 
 # ----------------------------------------------------------------------------- 3 heatmap
-with tabs[2]:
+with tabs[3]:
     matrix = category_matrix(view)
     if matrix.empty:
         st.info("No results for this selection.")
@@ -370,7 +495,7 @@ with tabs[2]:
         st.caption("Mean per-prompt quality (0–1). Each category has about 8 prompts.")
 
 # ----------------------------------------------------------------------------- 4 drift
-with tabs[3]:
+with tabs[4]:
     series = run_timeseries(results[results["model_name"].isin(models_sel)])
     history = get_history(db_path, mtime, drift_cfg_json)
     if series.empty:
@@ -478,7 +603,7 @@ with tabs[3]:
         )
 
 # ----------------------------------------------------------------------------- 5 drill-down
-with tabs[4]:
+with tabs[5]:
     if view.empty:
         st.info("No results for this selection.")
     else:
@@ -554,7 +679,7 @@ with tabs[4]:
                     )
 
 # ----------------------------------------------------------------------------- 6 history
-with tabs[5]:
+with tabs[6]:
     per_run = (
         results[results["model_name"].isin(models_sel)]
         .pipe(run_timeseries)
