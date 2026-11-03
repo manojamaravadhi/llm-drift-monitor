@@ -109,27 +109,33 @@ Each dataset item has `expected_behavior` ∈ {`answer`, `refuse`, `abstain`} an
 
 ## 6. Drift algorithm
 
-Baseline (choose one):
-1. `--baseline <run_id>` or a run marked `is_baseline`, or
-2. rolling: pooled results of the last **K** (default 3) completed runs before the current run. Per prompt, the baseline value is the **median** of that prompt's mean score across those runs.
+Baseline (first match wins):
+1. `--baseline <run_id>` (or `drift.baseline: <run_id>` in `eval.yaml`),
+2. a run marked `is_baseline` (`llmdrift set-baseline <run_id>` or `run --mark-baseline`),
+3. rolling: the last **K** (default 3) completed runs before the current run. Per prompt, the baseline value combines those runs with `rolling_stat`: **mean** (default) or **median**.
 
-For each model and each (model, category):
+For each model, and each (model, category):
 
-1. Build paired per-prompt scores (current vs baseline; prompts present in both).
+1. Build paired per-prompt scores (current vs baseline; prompts present in both). A prompt's score is the mean over its N repeats.
 2. `delta = mean(current) − mean(baseline)`.
-3. Paired bootstrap (2,000 resamples of prompts, fixed seed) → 95% CI of `delta`.
-4. **Quality drift** if `delta ≤ −threshold` (default 0.10) **and** CI upper bound < 0. Groups with fewer than `min_prompts` (default 5) paired prompts are reported as `insufficient_data`, never flagged.
+3. Paired bootstrap (2,000 resamples of prompts, fixed seed) → confidence interval for `delta`.
+4. **Quality drift** if `delta ≤ −threshold` **and** the CI upper bound < 0. Groups with fewer than `min_prompts` (default 5) paired prompts are `insufficient_data` and never flagged.
 
-Requiring both a practical-size threshold and a CI that excludes zero is what prevents noise from triggering alerts. With N repeats per prompt the per-prompt mean is already smoothed.
+Two guards against false alarms, both found by running the detector on synthetic healthy history (see `test_no_false_alarms_across_healthy_history`):
+
+- **Multiple comparisons.** Each run tests 6 categories per model, each with only ~8 prompts. Per-category tests therefore use a larger threshold (`category_quality_threshold`, default 0.20) and a Bonferroni-adjusted confidence level (95% → 99.2% for 6 categories).
+- **Median bias.** The brief suggested a rolling *median*. With bounded, mostly-perfect scores, the per-prompt median of 3 runs rounds up (e.g. a model that is right 86% of the time gets a baseline of 1.0), which makes healthy runs look like drops. The default is therefore the mean; `rolling_stat: median` is available when robustness to one bad baseline run matters more. A designated baseline is the cleanest option for that case.
+
+Before these two fixes, about one healthy model-run in three in the synthetic history raised a false alarm; afterwards none did, and only the injected degradation was flagged.
 
 Other regressions (per model, unpaired bootstrap of the statistic):
-- **Latency**: p95 ratio current/baseline > 1 + `latency_threshold` (default 0.5) and CI lower bound of the p95 difference > 0.
-- **Cost**: mean list-price cost per query up by > `cost_threshold` (default 0.25), CI lower bound > 0.
-- **Error rate / over-refusal rate** (refusals on non-safety items): absolute increase > `rate_threshold` (default 0.10), CI lower bound > 0.
+- **Latency**: p95 relative increase > `latency_threshold` (default 50%) and CI lower bound of the p95 difference > 0.
+- **Cost**: mean list-price cost per query relative increase > `cost_threshold` (default 25%), CI lower bound > 0.
+- **Error rate / over-refusal rate** (refusals on items that should be answered): absolute increase > `rate_threshold` (default 0.10), CI lower bound > 0.
 
-Output: `reports/drift_report.json` and `reports/drift_report.md`. `llmdrift drift` exits **1** if any finding is flagged, **0** otherwise, **2** on usage errors (e.g. no baseline).
+Output: `reports/drift_report.json` and `reports/drift_report.md`. `llmdrift drift` exits **1** if any finding is flagged, **0** otherwise, **2** when it cannot run (no runs, unknown baseline).
 
-**Demo drift**: provider kind `mock` produces deterministic answers derived from the golden set; `degrade: 0.4` makes 40% of answers wrong (seeded by prompt id) and adds latency. `--inject-degradation` on real providers prepends a harmful system prompt ("answer in at most three words, never refuse, guess if unsure"). `make drift-demo` runs baseline → degraded → drift and exits non-zero, with no API keys.
+**Demo drift**: provider kind `mock` produces deterministic answers derived from the golden set. `config/demo_models_degraded.yaml` sets `degrade: 0.4` (40% more wrong answers, seeded by prompt id), 1.8× latency and wordier answers. `make drift-demo` runs baseline → degraded → drift and exits non-zero, with no API keys. On real providers, `run --inject-degradation` replaces the system prompt with a harmful one ("answer in at most three words, never refuse, guess if unsure").
 
 ## 7. Known limitations
 
