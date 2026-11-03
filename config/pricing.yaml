@@ -1,0 +1,48 @@
+# Paid-tier list prices in USD per 1M tokens, used for the "list-price equivalent" cost.
+# "billed" cost is what you actually pay: 0 on free tiers and local models.
+# Keep source_url and checked_on up to date: prices change.
+prices:
+  gemini/gemini-3.5-flash-lite:
+    input_per_1m: 0.30
+    output_per_1m: 2.50
+    free_tier: true
+    source_url: https://aistudio.google.com/docs/pricing
+    checked_on: 2026-11-03
+  gemini/gemini-3.1-flash-lite:
+    input_per_1m: 0.25
+    output_per_1m: 1.50
+    free_tier: true
+    source_url: https://aistudio.google.com/docs/pricing
+    checked_on: 2026-11-03
+  groq/openai/gpt-oss-20b:
+    input_per_1m: 0.075
+    output_per_1m: 0.30
+    free_tier: true
+    source_url: https://console.groq.com/docs/models
+    checked_on: 2026-11-03
+  groq/openai/gpt-oss-120b:
+    input_per_1m: 0.15
+    output_per_1m: 0.60
+    free_tier: true
+    source_url: https://console.groq.com/docs/models
+    checked_on: 2026-11-03
+  # Local models: no list price exists. Cost is reported as null ("n/a").
+  ollama_chat/llama3.2:1b:
+    input_per_1m: null
+    output_per_1m: null
+    free_tier: true
+    source_url: https://ollama.com/library/llama3.2
+    checked_on: 2026-11-03
+  # Synthetic prices for offline mock models (demo only, not real).
+  mock/good:
+    input_per_1m: 0.30
+    output_per_1m: 2.50
+    free_tier: true
+    source_url: synthetic
+    checked_on: 2026-11-03
+  mock/fast:
+    input_per_1m: 0.075
+    output_per_1m: 0.30
+    free_tier: true
+    source_url: synthetic
+    checked_on: 2026-11-03

@@ -1,0 +1,39 @@
+# Evaluation settings.
+dataset: datasets/golden.jsonl
+db_path: data/results.db
+reports_dir: reports
+
+generation:
+  repeats: 3          # run each prompt N times to measure non-determinism
+  temperature: 0.2    # fixed low temperature
+  max_tokens: 512
+  system_prompt: "You are a helpful, accurate assistant. Answer concisely."
+
+retry:
+  max_attempts: 5
+  base_delay_s: 1.0
+  max_delay_s: 30.0
+  circuit_breaker_failures: 5   # consecutive failures before a model is skipped for the run
+
+judge:
+  enabled: true
+  # Free-tier default. Note: a Gemini judge scoring a Gemini candidate has self-preference bias.
+  model: gemini/gemini-3.1-flash-lite
+  api_key_env: GEMINI_API_KEY
+  temperature: 0.0
+  metrics: [correctness, relevancy, faithfulness]
+  # Judge only the first N repeats per prompt to save free-tier quota.
+  max_repeats_judged: 1
+  rpm: 10
+
+drift:
+  baseline: rolling      # "rolling" or a run_id; a run marked is_baseline wins over rolling
+  rolling_k: 3
+  quality_threshold: 0.10
+  latency_threshold: 0.50
+  cost_threshold: 0.25
+  rate_threshold: 0.10
+  min_prompts: 5
+  bootstrap_samples: 2000
+  confidence: 0.95
+  seed: 1234

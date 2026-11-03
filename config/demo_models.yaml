@@ -1,0 +1,15 @@
+# Offline, deterministic mock models. Used by `make drift-demo`, tests and the demo DB.
+# No API calls are made.
+models:
+  - name: mock-good
+    provider: mock
+    model: mock/good
+    enabled: true
+    rpm: 100000
+    params: {quality: 0.92, latency_ms: 450, latency_jitter_ms: 120, tokens_per_word: 1.3}
+  - name: mock-fast
+    provider: mock
+    model: mock/fast
+    enabled: true
+    rpm: 100000
+    params: {quality: 0.78, latency_ms: 180, latency_jitter_ms: 40, tokens_per_word: 1.3}

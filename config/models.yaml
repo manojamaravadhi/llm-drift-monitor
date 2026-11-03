@@ -1,0 +1,54 @@
+# Models under test. Adding a model = adding an entry here; no code change.
+# Model IDs checked against official docs on 2026-11-03.
+#
+# Fields:
+#   name        unique display name (used in the DB and dashboard)
+#   provider    gemini | groq | ollama | mock
+#   model       LiteLLM model id (provider prefix included)
+#   enabled     false = skipped entirely
+#   api_key_env env var holding the key (never put keys in this file)
+#   api_base    optional base URL (Ollama)
+#   rpm         client-side request-per-minute throttle (stay under free-tier limits)
+#   timeout_s   per-request timeout
+#   stream      use streaming (needed for time-to-first-token)
+#   params      mock-only settings (quality, degrade, latency profile)
+models:
+  - name: gemini-3.5-flash-lite
+    provider: gemini
+    model: gemini/gemini-3.5-flash-lite
+    enabled: true
+    api_key_env: GEMINI_API_KEY
+    rpm: 10
+    timeout_s: 60
+    stream: true
+
+  # Groq shut down free-tier Llama models on 2026-08-16 (console.groq.com/docs/deprecations).
+  # gpt-oss-20b is Groq's official replacement for llama-3.1-8b-instant.
+  - name: groq-gpt-oss-20b
+    provider: groq
+    model: groq/openai/gpt-oss-20b
+    enabled: true
+    api_key_env: GROQ_API_KEY
+    rpm: 25
+    timeout_s: 60
+    stream: true
+
+  # Only works on Groq enterprise contracts now. Enable if your account still has access.
+  - name: groq-llama-3.1-8b
+    provider: groq
+    model: groq/llama-3.1-8b-instant
+    enabled: false
+    api_key_env: GROQ_API_KEY
+    rpm: 25
+    timeout_s: 60
+    stream: true
+
+  # Local Llama via Ollama. Run: ollama pull llama3.2:1b
+  - name: ollama-llama3.2-1b
+    provider: ollama
+    model: ollama_chat/llama3.2:1b
+    enabled: true
+    api_base: http://localhost:11434
+    rpm: 600
+    timeout_s: 120
+    stream: true
