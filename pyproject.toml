@@ -35,6 +35,8 @@ dev = [
   "pre-commit==4.7.0",
 ]
 
+docs = ["playwright==1.64.1"]
+
 [project.scripts]
 llmdrift = "llmdrift.cli:app"
 
@@ -61,7 +63,7 @@ files = ["src", "dashboard", "scripts"]
 mypy_path = "src"
 
 [[tool.mypy.overrides]]
-module = ["litellm.*", "deepeval.*", "plotly.*", "streamlit.*"]
+module = ["litellm.*", "deepeval.*", "plotly.*", "streamlit.*", "playwright.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
