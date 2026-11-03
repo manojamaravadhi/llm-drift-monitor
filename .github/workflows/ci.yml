@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      DEEPEVAL_TELEMETRY_OPT_OUT: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Lint
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: Type-check (mypy --strict)
+        run: mypy
+      - name: Validate golden dataset
+        run: llmdrift validate-dataset
+      - name: Tests (no network)
+        run: pytest --cov --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+      - name: Offline drift demo must fail on injected degradation
+        run: |
+          set +e
+          make drift-demo BIN="$(dirname "$(which python)")"
+          code=$?
+          set -e
+          if [ "$code" -eq 0 ]; then echo "drift demo should exit non-zero"; exit 1; fi
+          echo "drift demo exited $code as expected"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: coverage
+          path: coverage.xml

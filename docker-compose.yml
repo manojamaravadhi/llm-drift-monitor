@@ -1,0 +1,23 @@
+services:
+  dashboard:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      # Point at /app/data/results.db to view your own runs (mounted below).
+      LLMDRIFT_DB: ${LLMDRIFT_DB:-/app/data/demo.db}
+    volumes:
+      - ./data:/app/data
+
+  # Optional local model server: docker compose --profile ollama up
+  # then: docker compose exec ollama ollama pull llama3.2:1b
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+
+volumes:
+  ollama:
