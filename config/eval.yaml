@@ -17,15 +17,17 @@ retry:
 
 judge:
   enabled: true
-  # Free-tier default. Note: a Gemini judge scoring a Gemini candidate has self-preference bias.
-  model: gemini/gemini-3.1-flash-lite
-  api_key_env: GEMINI_API_KEY
+  # Free-tier default. Groq's gpt-oss-120b answered in 1-2 s; free Gemini Flash-Lite was
+  # overloaded (503s, ~25 s per judgement) on 2026-11-03. Bias note: it shares a model
+  # family with the groq-gpt-oss-20b candidate (possible self-preference).
+  model: groq/openai/gpt-oss-120b
+  api_key_env: GROQ_API_KEY
   temperature: 0.0
   # correctness and faithfulness cost one judge call per answer; relevancy costs 2-3.
   metrics: [correctness, faithfulness]
   # Judge only the first N repeats per prompt to save free-tier quota.
   max_repeats_judged: 1
-  rpm: 10
+  rpm: 25
 
 drift:
   baseline: rolling      # "rolling" or a run_id; a run marked is_baseline wins over rolling

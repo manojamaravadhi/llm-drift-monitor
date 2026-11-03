@@ -39,7 +39,7 @@ The brief asked for "Llama via Groq free tier". **Groq shut down `llama-3.1-8b-i
 | Groq | `groq/qwen/qwen3.8-27b` | Third model family (Alibaba Qwen), free tier; listed by Groq as a preview model. |
 | Local (optional) | `ollama_chat/llama3.2:1b` | Llama on your own machine via Ollama; skipped when no local server runs. |
 | Ollama Cloud (disabled) | `openai/gemma4:31b` at `https://ollama.com/v1` | Ollama Cloud has **no free tier** (pay-as-you-go per token); a key without credits gets "Add usage credits". Wired through the generic `openai_compatible` provider. |
-| Judge | `gemini/gemini-3.1-flash-lite` | Different model from the Gemini candidate; still same family (see bias note). |
+| Judge | `groq/openai/gpt-oss-120b` | Fast (1–2 s per judgement) on the free tier. Same family as the `gpt-oss-20b` candidate (see bias note). The free Gemini 3.1 Flash-Lite judge was tried first and was overloaded (503s, ~25 s per judgement). |
 
 A disabled `groq/llama-3.1-8b-instant` entry stays in `config/models.yaml` for enterprise accounts.
 
@@ -147,7 +147,7 @@ Output: `reports/drift_report.json` and `reports/drift_report.md`. `llmdrift dri
 
 ## 7. Known limitations
 
-- **Judge bias and noise.** The default judge is a Gemini model scoring a Gemini candidate (self-preference bias). Judge scores move between calls even at temperature 0. They are reported alongside, not instead of, deterministic checks; swap the judge in `config/eval.yaml`.
+- **Judge bias and noise.** The default judge (`gpt-oss-120b`) shares a family with the `gpt-oss-20b` candidate (self-preference bias). Judge scores move between calls even at temperature 0. They are reported alongside, not instead of, deterministic checks; swap the judge in `config/eval.yaml`.
 - **Small sample.** ~50 prompts × 3 repeats. Per-category groups have ~8 prompts, so only large regressions can be detected with confidence; this is a design choice (free-tier budgets) and is stated in every report.
 - **Free-tier rate limits.** Gemini publishes free-tier limits only inside AI Studio; defaults throttle conservatively (`rpm` per model in `models.yaml`). Groq `gpt-oss-20b` shows 30 RPM / 1K RPD / 8K TPM in its rate-limit table. A full run with judge metrics can take 15–30 minutes.
 - **Prices change.** Gemini 3.x Flash prices change on 2027-01-01. `pricing.yaml` has a `checked_on` date per entry.
