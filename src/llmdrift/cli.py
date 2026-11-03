@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
@@ -70,7 +71,8 @@ def main(
     verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
 ) -> None:
     """Load .env and shared options."""
-    load_dotenv()
+    if os.environ.get("LLMDRIFT_DOTENV", "1") != "0":  # tests set 0: never load real keys
+        load_dotenv()
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
@@ -112,6 +114,9 @@ def run(
     ] = False,
     label: Annotated[str | None, typer.Option(help="Free-text label for this run.")] = None,
     mark_baseline: Annotated[bool, typer.Option(help="Mark this run as the baseline.")] = False,
+    sequential: Annotated[
+        bool, typer.Option("--sequential", help="One model at a time (default: parallel).")
+    ] = False,
 ) -> None:
     """Evaluate models on the golden dataset and store results (resumes if interrupted)."""
     c: Ctx = ctx.obj
@@ -136,6 +141,7 @@ def run(
         fresh=fresh,
         inject_degradation=inject_degradation,
         label=label,
+        parallel=not sequential,
     )
     try:
         summary = runner.run(opts)

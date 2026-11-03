@@ -1,5 +1,5 @@
-# Same mock models as demo_models.yaml, but mock-good is degraded:
-# 40% more wrong answers, 1.8x slower and wordier. Used by `make drift-demo`.
+# Same mock models as mock_models.yaml, but mock-good is degraded:
+# 40% more wrong answers, 1.8x slower and wordier. Used by the drift tests.
 models:
   - name: mock-good
     provider: mock

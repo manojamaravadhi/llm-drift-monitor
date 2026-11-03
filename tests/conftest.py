@@ -18,6 +18,7 @@ def _no_real_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     for var in ("GEMINI_API_KEY", "GROQ_API_KEY", "OLLAMA_API_BASE"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("DEEPEVAL_TELEMETRY_OPT_OUT", "1")
+    monkeypatch.setenv("LLMDRIFT_DOTENV", "0")
 
 
 @pytest.fixture(scope="session")
@@ -35,13 +36,13 @@ def eval_cfg() -> EvalConfig:
 
 
 @pytest.fixture
-def demo_models() -> list[ModelConfig]:
-    return load_models(ROOT / "config" / "demo_models.yaml")
+def mock_models() -> list[ModelConfig]:
+    return load_models(ROOT / "tests" / "fixtures" / "mock_models.yaml")
 
 
 @pytest.fixture
 def degraded_models() -> list[ModelConfig]:
-    return load_models(ROOT / "config" / "demo_models_degraded.yaml")
+    return load_models(ROOT / "tests" / "fixtures" / "mock_models_degraded.yaml")
 
 
 @pytest.fixture

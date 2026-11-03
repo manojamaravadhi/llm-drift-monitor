@@ -21,7 +21,8 @@ judge:
   model: gemini/gemini-3.1-flash-lite
   api_key_env: GEMINI_API_KEY
   temperature: 0.0
-  metrics: [correctness, relevancy, faithfulness]
+  # correctness and faithfulness cost one judge call per answer; relevancy costs 2-3.
+  metrics: [correctness, faithfulness]
   # Judge only the first N repeats per prompt to save free-tier quota.
   max_repeats_judged: 1
   rpm: 10

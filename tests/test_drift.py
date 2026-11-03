@@ -172,14 +172,14 @@ def _seed_runs(
 
 def test_end_to_end_injected_degradation(
     eval_cfg: EvalConfig,
-    demo_models: list[ModelConfig],
+    mock_models: list[ModelConfig],
     degraded_models: list[ModelConfig],
     pricing: dict[str, Any],
     dataset: list[GoldenItem],
     engine: Engine,
 ) -> None:
     ids = _seed_runs(
-        eval_cfg, [demo_models, demo_models, degraded_models], pricing, dataset, engine
+        eval_cfg, [mock_models, mock_models, degraded_models], pricing, dataset, engine
     )
     choice = choose_baseline(engine, eval_cfg.drift)
     assert choice.current_run == ids[-1] and choice.baseline_runs == ids[:2]
@@ -209,14 +209,14 @@ def test_end_to_end_injected_degradation(
 
 def test_baseline_selection_rules(
     eval_cfg: EvalConfig,
-    demo_models: list[ModelConfig],
+    mock_models: list[ModelConfig],
     pricing: dict[str, Any],
     dataset: list[GoldenItem],
     engine: Engine,
 ) -> None:
     with pytest.raises(BaselineError, match="no completed"):
         choose_baseline(engine, eval_cfg.drift)
-    small = [m.model_copy() for m in demo_models[:1]]
+    small = [m.model_copy() for m in mock_models[:1]]
     eval_cfg.generation.repeats = 1
     ids = _seed_runs(eval_cfg, [small] * 4, pricing, dataset, engine)
     with pytest.raises(BaselineError, match="earlier"):
@@ -243,7 +243,7 @@ def test_baseline_selection_rules(
 
 def test_no_false_alarms_across_healthy_history(
     eval_cfg: EvalConfig,
-    demo_models: list[ModelConfig],
+    mock_models: list[ModelConfig],
     pricing: dict[str, Any],
     dataset: list[GoldenItem],
     engine: Engine,
@@ -254,11 +254,11 @@ def test_no_false_alarms_across_healthy_history(
 
     eval_cfg.generation.repeats = 3
     weeks = [
-        [m.model_copy(update={"params": {**m.params, "seed": week}}) for m in demo_models]
+        [m.model_copy(update={"params": {**m.params, "seed": week}}) for m in mock_models]
         for week in range(6)
     ]
     _seed_runs(eval_cfg, weeks, pricing, dataset, engine)
     history = drift_history(load_results(engine), load_runs(engine), eval_cfg.drift)
-    assert len(history) == 5 * len(demo_models)
+    assert len(history) == 5 * len(mock_models)
     assert (history["flagged"] == "").all(), history[history["flagged"] != ""]
     assert (history["band_low"] < history["baseline_quality"]).all()

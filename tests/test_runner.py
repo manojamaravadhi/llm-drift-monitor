@@ -47,13 +47,13 @@ def _count(engine: Engine, model: type = Result) -> int:
 
 def test_full_mock_run_stores_everything(
     eval_cfg: EvalConfig,
-    demo_models: list[ModelConfig],
+    mock_models: list[ModelConfig],
     pricing: dict[str, Any],
     dataset: list[GoldenItem],
     engine: Engine,
 ) -> None:
-    summary = _runner(eval_cfg, demo_models, pricing, dataset, engine).run()
-    expected = len(dataset) * 2 * len(demo_models)
+    summary = _runner(eval_cfg, mock_models, pricing, dataset, engine).run()
+    expected = len(dataset) * 2 * len(mock_models)
     assert summary.calls_made == expected
     assert _count(engine) == expected
     assert _count(engine, MetricRow) > expected
@@ -69,12 +69,12 @@ def test_full_mock_run_stores_everything(
 
 def test_cache_prevents_repaying_and_can_be_bypassed(
     eval_cfg: EvalConfig,
-    demo_models: list[ModelConfig],
+    mock_models: list[ModelConfig],
     pricing: dict[str, Any],
     dataset: list[GoldenItem],
     engine: Engine,
 ) -> None:
-    runner = _runner(eval_cfg, demo_models, pricing, dataset, engine)
+    runner = _runner(eval_cfg, mock_models, pricing, dataset, engine)
     runner.run(RunOptions(categories=["factual"]))
     second = runner.run(RunOptions(categories=["factual"], fresh=True))
     assert second.calls_made == 0 and second.cache_hits == 8 * 2 * 2
@@ -98,12 +98,12 @@ class Interrupting:
 
 def test_interrupted_run_resumes_without_duplicates(
     eval_cfg: EvalConfig,
-    demo_models: list[ModelConfig],
+    mock_models: list[ModelConfig],
     pricing: dict[str, Any],
     dataset: list[GoldenItem],
     engine: Engine,
 ) -> None:
-    models = demo_models[:1]
+    models = mock_models[:1]
     opts = RunOptions(categories=["factual", "reasoning"], use_cache=False)
     crashing = _runner(
         eval_cfg,
@@ -139,7 +139,7 @@ class Broken:
 
 def test_failing_provider_is_recorded_and_circuit_breaks(
     eval_cfg: EvalConfig,
-    demo_models: list[ModelConfig],
+    mock_models: list[ModelConfig],
     pricing: dict[str, Any],
     dataset: list[GoldenItem],
     engine: Engine,
@@ -148,7 +148,7 @@ def test_failing_provider_is_recorded_and_circuit_breaks(
     eval_cfg.retry.circuit_breaker_failures = 3
     runner = _runner(
         eval_cfg,
-        demo_models[:1],
+        mock_models[:1],
         pricing,
         dataset,
         engine,
@@ -168,7 +168,7 @@ def test_failing_provider_is_recorded_and_circuit_breaks(
         assert run is not None
         run.status = "running"
         s.commit()
-    summary2 = _runner(eval_cfg, demo_models[:1], pricing, dataset, engine).run(
+    summary2 = _runner(eval_cfg, mock_models[:1], pricing, dataset, engine).run(
         RunOptions(categories=["factual"])
     )
     assert summary2.resumed and summary2.calls_made == 16 and summary2.errors == 0
@@ -177,7 +177,7 @@ def test_failing_provider_is_recorded_and_circuit_breaks(
 
 def test_non_retryable_error_single_attempt(
     eval_cfg: EvalConfig,
-    demo_models: list[ModelConfig],
+    mock_models: list[ModelConfig],
     pricing: dict[str, Any],
     dataset: list[GoldenItem],
     engine: Engine,
@@ -185,7 +185,7 @@ def test_non_retryable_error_single_attempt(
     broken = Broken(ProviderAuthError("bad key"))
     runner = _runner(
         eval_cfg,
-        demo_models[:1],
+        mock_models[:1],
         pricing,
         dataset,
         engine,
@@ -197,7 +197,7 @@ def test_non_retryable_error_single_attempt(
 
 def test_model_selection_and_skips(
     eval_cfg: EvalConfig,
-    demo_models: list[ModelConfig],
+    mock_models: list[ModelConfig],
     pricing: dict[str, Any],
     dataset: list[GoldenItem],
     engine: Engine,
@@ -205,7 +205,7 @@ def test_model_selection_and_skips(
     def availability(cfg: ModelConfig) -> tuple[bool, str]:
         return (cfg.name == "mock-good", "offline")
 
-    runner = _runner(eval_cfg, demo_models, pricing, dataset, engine, availability=availability)
+    runner = _runner(eval_cfg, mock_models, pricing, dataset, engine, availability=availability)
     summary = runner.run(
         RunOptions(models=["mock-good", "mock-fast", "ghost"], repeats=1, categories=["safety"])
     )
@@ -231,14 +231,14 @@ class FakeJudge:
 
 def test_judge_only_scores_first_repeats(
     eval_cfg: EvalConfig,
-    demo_models: list[ModelConfig],
+    mock_models: list[ModelConfig],
     pricing: dict[str, Any],
     dataset: list[GoldenItem],
     engine: Engine,
 ) -> None:
     judge = FakeJudge()
     eval_cfg.judge.max_repeats_judged = 1
-    runner = _runner(eval_cfg, demo_models[:1], pricing, dataset, engine, judge=judge)
+    runner = _runner(eval_cfg, mock_models[:1], pricing, dataset, engine, judge=judge)
     summary = runner.run(RunOptions(categories=["factual"], repeats=3))
     assert judge.calls == 8
     with Session(engine) as s:

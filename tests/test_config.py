@@ -14,7 +14,7 @@ def test_shipped_configs_parse() -> None:
     providers = {m.provider for m in models}
     assert {"gemini", "groq", "ollama"} <= providers
     assert all(m.api_key_env or m.provider in {"ollama", "mock"} for m in models)
-    load_models(ROOT / "config" / "demo_models.yaml")
+    load_models(ROOT / "tests" / "fixtures" / "mock_models.yaml")
     cfg = load_eval_config(ROOT / "config" / "eval.yaml")
     assert cfg.judge.temperature == 0.0
     assert cfg.generation.repeats >= 1
@@ -22,8 +22,8 @@ def test_shipped_configs_parse() -> None:
 
 def test_every_enabled_model_has_a_price_entry() -> None:
     prices = load_pricing(ROOT / "config" / "pricing.yaml")
-    for path in ("models.yaml", "demo_models.yaml"):
-        for m in load_models(ROOT / "config" / path):
+    for path in ("config/models.yaml", "tests/fixtures/mock_models.yaml"):
+        for m in load_models(ROOT / path):
             if m.enabled:
                 assert m.model in prices, m.model
     for entry in prices.values():

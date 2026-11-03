@@ -3,7 +3,7 @@
 #
 # Fields:
 #   name        unique display name (used in the DB and dashboard)
-#   provider    gemini | groq | ollama | mock
+#   provider    gemini | groq | ollama | openai_compatible | mock
 #   model       LiteLLM model id (provider prefix included)
 #   enabled     false = skipped entirely
 #   api_key_env env var holding the key (never put keys in this file)
@@ -33,6 +33,16 @@ models:
     timeout_s: 60
     stream: true
 
+  # Qwen on Groq's free tier: a third, different model family (Alibaba).
+  - name: groq-qwen3.8-27b
+    provider: groq
+    model: groq/qwen/qwen3.8-27b
+    enabled: true
+    api_key_env: GROQ_API_KEY
+    rpm: 25
+    timeout_s: 60
+    stream: true
+
   # Only works on Groq enterprise contracts now. Enable if your account still has access.
   - name: groq-llama-3.1-8b
     provider: groq
@@ -43,7 +53,21 @@ models:
     timeout_s: 60
     stream: true
 
-  # Local Llama via Ollama. Run: ollama pull llama3.2:1b
+  # Ollama Cloud through its OpenAI-compatible API. NOT free: pay-as-you-go per token
+  # (https://ollama.com/pricing). Any OpenAI-compatible endpoint works the same way.
+  # Disabled: requires purchased usage credits ("Add usage credits to use cloud models").
+  - name: ollama-cloud-gemma4-31b
+    provider: openai_compatible
+    model: openai/gemma4:31b
+    enabled: false
+    api_key_env: OLLAMA_API_KEY
+    api_base: https://ollama.com/v1
+    rpm: 30
+    timeout_s: 120
+    stream: true
+
+  # Local Llama via Ollama (free, runs on your machine). Run: ollama pull llama3.2:1b
+  # Skipped automatically when no local Ollama server is running.
   - name: ollama-llama3.2-1b
     provider: ollama
     model: ollama_chat/llama3.2:1b

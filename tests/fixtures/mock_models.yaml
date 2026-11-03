@@ -1,5 +1,4 @@
-# Offline, deterministic mock models. Used by `make drift-demo`, tests and the demo DB.
-# No API calls are made.
+# Offline, deterministic mock models used only by the unit tests (no API calls).
 models:
   - name: mock-good
     provider: mock

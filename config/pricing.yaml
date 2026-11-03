@@ -26,6 +26,13 @@ prices:
     free_tier: true
     source_url: https://console.groq.com/docs/models
     checked_on: 2026-11-03
+  # Ollama Cloud bills every token (no free tier), so billed == list price.
+  openai/gemma4:31b:
+    input_per_1m: 0.14
+    output_per_1m: 0.40
+    free_tier: false
+    source_url: https://ollama.com/pricing
+    checked_on: 2026-11-03
   # Local models: no list price exists. Cost is reported as null ("n/a").
   ollama_chat/llama3.2:1b:
     input_per_1m: null
@@ -51,4 +58,11 @@ prices:
     output_per_1m: null
     free_tier: true
     source_url: synthetic
+    checked_on: 2026-11-03
+  # Preview model on Groq (not production-designated).
+  groq/qwen/qwen3.8-27b:
+    input_per_1m: 0.80
+    output_per_1m: 4.00
+    free_tier: true
+    source_url: https://console.groq.com/docs/models
     checked_on: 2026-11-03

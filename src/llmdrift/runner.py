@@ -8,6 +8,7 @@ import os
 import subprocess
 import uuid
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 
@@ -58,6 +59,7 @@ class RunOptions:
     synthetic: bool = False
     started_at: datetime | None = None  # override for seeding synthetic history
     run_id: str | None = None
+    parallel: bool = True  # evaluate models concurrently (each keeps its own rate limit)
 
 
 @dataclass
@@ -73,6 +75,15 @@ class RunSummary:
     skipped_existing: int = 0
     errors: int = 0
     per_model_errors: dict[str, int] = field(default_factory=dict)
+
+    def merge(self, other: RunSummary) -> None:
+        """Add the counters of a per-model partial summary."""
+        self.calls_made += other.calls_made
+        self.cache_hits += other.cache_hits
+        self.skipped_existing += other.skipped_existing
+        self.errors += other.errors
+        for name, count in other.per_model_errors.items():
+            self.per_model_errors[name] = self.per_model_errors.get(name, 0) + count
 
 
 def git_commit() -> str | None:
@@ -224,13 +235,41 @@ class Runner:
                 models_run=[m.name for m in models],
                 models_skipped=skipped,
             )
-            for model_cfg in models:
-                self._run_model(session, run, model_cfg, items, repeats, opts, summary)
+            run_id = run.run_id
+            if opts.parallel and len(models) > 1:
+                # One thread per model: each has its own session, throttle and breaker.
+                with ThreadPoolExecutor(max_workers=len(models)) as pool:
+                    futures = [
+                        pool.submit(self._run_model_thread, run_id, m, items, repeats, opts)
+                        for m in models
+                    ]
+                    for future in futures:
+                        summary.merge(future.result())
+            else:
+                for model_cfg in models:
+                    self._run_model(session, run, model_cfg, items, repeats, opts, summary)
+            session.refresh(run)
 
             run.status = "completed"
             run.finished_at = utcnow() if opts.started_at is None else opts.started_at
             session.commit()
         return summary
+
+    def _run_model_thread(
+        self,
+        run_id: str,
+        model_cfg: ModelConfig,
+        items: list[GoldenItem],
+        repeats: int,
+        opts: RunOptions,
+    ) -> RunSummary:
+        """Evaluate one model in its own session; return its partial summary."""
+        part = RunSummary(run_id=run_id, resumed=False, models_run=[], models_skipped={})
+        with Session(self.engine, expire_on_commit=False) as session:
+            run = session.get(Run, run_id)
+            assert run is not None
+            self._run_model(session, run, model_cfg, items, repeats, opts, part)
+        return part
 
     def _run_model(
         self,

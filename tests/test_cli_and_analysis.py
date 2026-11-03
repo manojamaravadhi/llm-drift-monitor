@@ -16,12 +16,12 @@ from tests.conftest import ROOT
 cli = CliRunner()
 
 
-def _invoke(db: Path, *args: str, models: str = "demo_models.yaml") -> Any:
+def _invoke(db: Path, *args: str, models: str = "tests/fixtures/mock_models.yaml") -> Any:
     return cli.invoke(
         app,
         [
             "--models-config",
-            str(ROOT / "config" / models),
+            str(ROOT / models),
             "--eval-config",
             str(ROOT / "config" / "eval.yaml"),
             "--pricing-config",
@@ -62,7 +62,13 @@ def test_cli_demo_flow_exits_nonzero_on_drift(tmp_path: Path) -> None:
     assert ok.exit_code == 0, ok.output
 
     r3 = _invoke(
-        db, "run", "--no-judge", "--runs", "1", "--no-cache", models="demo_models_degraded.yaml"
+        db,
+        "run",
+        "--no-judge",
+        "--runs",
+        "1",
+        "--no-cache",
+        models="tests/fixtures/mock_models_degraded.yaml",
     )
     assert r3.exit_code == 0, r3.output
     drifted = _invoke(db, "drift", "--out-dir", str(out))
@@ -87,7 +93,7 @@ def test_cli_demo_flow_exits_nonzero_on_drift(tmp_path: Path) -> None:
 
 @pytest.mark.usefixtures("chdir_root")
 def test_run_without_any_usable_model(tmp_path: Path) -> None:
-    result = _invoke(tmp_path / "x.db", "run", "--no-judge", models="models.yaml")
+    result = _invoke(tmp_path / "x.db", "run", "--no-judge", models="config/models.yaml")
     assert result.exit_code == 2
     assert "no usable models" in result.output
 

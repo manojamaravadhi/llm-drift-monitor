@@ -11,7 +11,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-ProviderKind = Literal["gemini", "groq", "ollama", "mock"]
+ProviderKind = Literal["gemini", "groq", "ollama", "openai_compatible", "mock"]
 
 
 class ModelConfig(BaseModel):
@@ -98,9 +98,10 @@ class JudgeConfig(BaseModel):
     enabled: bool = True
     model: str = "gemini/gemini-3.1-flash-lite"
     api_key_env: str | None = "GEMINI_API_KEY"
+    api_base: str | None = None
     temperature: float = 0.0
     metrics: list[Literal["correctness", "relevancy", "faithfulness"]] = Field(
-        default_factory=lambda: ["correctness", "relevancy", "faithfulness"]  # type: ignore[arg-type]
+        default_factory=lambda: ["correctness", "faithfulness"]  # type: ignore[arg-type]
     )
     max_repeats_judged: int = Field(default=1, ge=1)
     rpm: float = Field(default=10, gt=0)

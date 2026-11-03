@@ -35,7 +35,11 @@ def test_deepeval_judge_applies_metrics_and_survives_errors(
     monkeypatch: pytest.MonkeyPatch, dataset: list[GoldenItem]
 ) -> None:
     monkeypatch.setenv("GEMINI_API_KEY", "k")
-    judge = DeepEvalJudge(JudgeConfig(), throttle=Throttle(rpm=1e9, sleep=lambda _: None))
+    cfg = JudgeConfig(metrics=["correctness", "relevancy", "faithfulness"])
+    sleeps: list[float] = []
+    judge = DeepEvalJudge(
+        cfg, throttle=Throttle(rpm=1e9, sleep=lambda _: None), sleep=sleeps.append
+    )
     assert set(judge._metrics) == {"correctness", "relevancy", "faithfulness"}
     judge._metrics = {
         "correctness": FakeMetric(0.8),
@@ -48,6 +52,7 @@ def test_deepeval_judge_applies_metrics_and_survives_errors(
     assert out["judge_relevancy"].value is None
     assert "quota" in out["judge_relevancy"].reason
     assert out["judge_faithfulness"].value == 1.0
+    assert sleeps == [5.0, 10.0]  # failing metric retried twice before giving up
 
     factual = next(i for i in dataset if i.category.value == "factual")
     assert "judge_faithfulness" not in {m.name for m in judge.score(factual, "p", "r")}
