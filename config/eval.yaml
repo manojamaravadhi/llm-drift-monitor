@@ -29,7 +29,10 @@ judge:
 drift:
   baseline: rolling      # "rolling" or a run_id; a run marked is_baseline wins over rolling
   rolling_k: 3
-  quality_threshold: 0.10
+  rolling_stat: mean     # per-prompt combination of baseline runs: mean (unbiased) or median
+  quality_threshold: 0.10           # per model, all prompts
+  category_quality_threshold: 0.20  # per model x category (~8 prompts: noisier)
+  bonferroni: true                  # adjust per-category CI for the number of categories
   latency_threshold: 0.50
   cost_threshold: 0.25
   rate_threshold: 0.10

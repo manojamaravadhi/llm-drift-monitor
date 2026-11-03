@@ -79,39 +79,46 @@ class DriftReport:
         }
 
 
-def _baseline_prompt_scores(baseline: pd.DataFrame) -> pd.DataFrame:
-    """Per (model, category, prompt) baseline score = median across baseline runs."""
+def _baseline_prompt_scores(baseline: pd.DataFrame, stat: str) -> pd.DataFrame:
+    """Per (model, category, prompt) baseline score = mean or median across baseline runs."""
     ps = per_prompt_scores(baseline)
-    return ps.groupby(["model_name", "category", "prompt_id"])["score"].median().reset_index()
+    grouped = ps.groupby(["model_name", "category", "prompt_id"])["score"]
+    return (grouped.median() if stat == "median" else grouped.mean()).reset_index()
 
 
 def _quality_finding(
-    model: str, category: str, cur: pd.DataFrame, base: pd.DataFrame, cfg: DriftConfig
+    model: str,
+    category: str,
+    cur: pd.DataFrame,
+    base: pd.DataFrame,
+    cfg: DriftConfig,
+    threshold: float,
+    confidence: float,
 ) -> Finding:
     merged = cur.merge(base, on="prompt_id", suffixes=("_cur", "_base"))
     n = len(merged)
     if n < cfg.min_prompts:
         return Finding(
             model, category, "quality", "insufficient_data", None, None, None, None, None,
-            cfg.quality_threshold, n, f"only {n} paired prompts (< {cfg.min_prompts})",
+            threshold, n, f"only {n} paired prompts (< {cfg.min_prompts})",
         )  # fmt: skip
     res = bootstrap_paired_mean_diff(
         merged["score_cur"].tolist(),
         merged["score_base"].tolist(),
         n_samples=cfg.bootstrap_samples,
-        confidence=cfg.confidence,
+        confidence=confidence,
         seed=cfg.seed,
     )
-    drift = res.delta <= -cfg.quality_threshold and res.ci_high < 0
+    drift = res.delta <= -threshold and res.ci_high < 0
     base_mean = float(merged["score_base"].mean())
     cur_mean = float(merged["score_cur"].mean())
     msg = (
         f"quality {base_mean:.3f} -> {cur_mean:.3f} (delta {res.delta:+.3f}, "
-        f"{cfg.confidence:.0%} CI [{res.ci_low:+.3f}, {res.ci_high:+.3f}])"
+        f"{confidence:.1%} CI [{res.ci_low:+.3f}, {res.ci_high:+.3f}], threshold {threshold})"
     )
     return Finding(
         model, category, "quality", "drift" if drift else "ok", base_mean, cur_mean,
-        res.delta, res.ci_low, res.ci_high, cfg.quality_threshold, n, msg,
+        res.delta, res.ci_low, res.ci_high, threshold, n, msg,
     )  # fmt: skip
 
 
@@ -171,15 +178,21 @@ def detect_drift(
         settings=cfg.model_dump(),
     )
     cur_ps = per_prompt_scores(current)
-    base_ps = _baseline_prompt_scores(baseline)
+    base_ps = _baseline_prompt_scores(baseline, cfg.rolling_stat)
     models = sorted(set(current["model_name"]) & set(baseline["model_name"]))
     for model in models:
         cur_m = cur_ps[cur_ps["model_name"] == model]
         base_m = base_ps[base_ps["model_name"] == model]
         report.findings.append(
-            _quality_finding(model, ALL, cur_m[["prompt_id", "score"]], base_m, cfg)
-        )
-        for category in sorted(set(cur_m["category"])):
+            _quality_finding(
+                model, ALL, cur_m[["prompt_id", "score"]], base_m, cfg,
+                cfg.quality_threshold, cfg.confidence,
+            )
+        )  # fmt: skip
+        categories = sorted(set(cur_m["category"]))
+        n_tests = len(categories) if cfg.bonferroni else 1
+        cat_confidence = 1 - (1 - cfg.confidence) / max(n_tests, 1)
+        for category in categories:
             report.findings.append(
                 _quality_finding(
                     model,
@@ -187,6 +200,8 @@ def detect_drift(
                     cur_m[cur_m["category"] == category][["prompt_id", "score"]],
                     base_m[base_m["category"] == category][["prompt_id", "score"]],
                     cfg,
+                    cfg.category_quality_threshold,
+                    cat_confidence,
                 )
             )
 

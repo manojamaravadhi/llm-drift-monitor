@@ -121,12 +121,31 @@ def test_insufficient_data_never_flagged() -> None:
     assert {f.status for f in report.findings} == {"insufficient_data"}
 
 
-def test_rolling_baseline_uses_median_per_prompt() -> None:
+@pytest.mark.parametrize(("stat", "expected"), [("median", 0.9), ("mean", 0.6)])
+def test_rolling_baseline_stat(stat: str, expected: float) -> None:
     b1, b2, b3 = _frame("b1", [0.9] * 20), _frame("b2", [0.9] * 20), _frame("b3", [0.0] * 20)
     baseline = pd.concat([b1, b2, b3])
-    report = detect_drift(_frame("c", [0.9] * 20), baseline, CFG, "c", ["b1", "b2", "b3"], "r")
+    cfg = CFG.model_copy(update={"rolling_stat": stat})
+    report = detect_drift(_frame("c", [0.9] * 20), baseline, cfg, "c", ["b1", "b2", "b3"], "r")
     q = next(f for f in report.findings if f.category == "ALL" and f.metric == "quality")
-    assert q.baseline == pytest.approx(0.9)  # outlier run b3 ignored by the median
+    assert q.baseline == pytest.approx(expected)  # median ignores the outlier run b3
+
+
+def test_bonferroni_widens_category_ci() -> None:
+    rng = np.random.default_rng(11)
+    base = rng.uniform(0.7, 1.0, 16)
+    cur = base - rng.uniform(0.0, 0.5, 16)
+    strict = detect_drift(_frame("c", list(cur)), _frame("b", list(base)), CFG, "c", ["b"], "x")
+    loose_cfg = CFG.model_copy(update={"bonferroni": False})
+    loose = detect_drift(
+        _frame("c", list(cur)), _frame("b", list(base)), loose_cfg, "c", ["b"], "x"
+    )
+
+    def width(report: Any) -> float:
+        f = next(f for f in report.findings if f.category == "cat_a")
+        return float(f.ci_high - f.ci_low)
+
+    assert width(strict) > width(loose)
 
 
 def _seed_runs(
@@ -220,3 +239,26 @@ def test_baseline_selection_rules(
     assert designated.mode == "designated" and designated.baseline_runs == [ids[0]]
     named = cfg.model_copy(update={"baseline": ids[1]})
     assert choose_baseline(engine, named).baseline_runs == [ids[1]]
+
+
+def test_no_false_alarms_across_healthy_history(
+    eval_cfg: EvalConfig,
+    demo_models: list[ModelConfig],
+    pricing: dict[str, Any],
+    dataset: list[GoldenItem],
+    engine: Engine,
+) -> None:
+    """Six healthy runs with different random seeds must never raise an alert."""
+    from llmdrift.analysis import load_runs
+    from llmdrift.drift.history import drift_history
+
+    eval_cfg.generation.repeats = 3
+    weeks = [
+        [m.model_copy(update={"params": {**m.params, "seed": week}}) for m in demo_models]
+        for week in range(6)
+    ]
+    _seed_runs(eval_cfg, weeks, pricing, dataset, engine)
+    history = drift_history(load_results(engine), load_runs(engine), eval_cfg.drift)
+    assert len(history) == 5 * len(demo_models)
+    assert (history["flagged"] == "").all(), history[history["flagged"] != ""]
+    assert (history["band_low"] < history["baseline_quality"]).all()

@@ -113,7 +113,14 @@ class DriftConfig(BaseModel):
 
     baseline: str = "rolling"
     rolling_k: int = Field(default=3, ge=1)
+    # How baseline runs are combined per prompt. "mean" is unbiased; "median" resists one bad
+    # baseline run but rounds bounded, mostly-perfect scores upward (more false alarms).
+    rolling_stat: Literal["mean", "median"] = "mean"
     quality_threshold: float = Field(default=0.10, ge=0)
+    # Per-category groups have ~8 prompts, so they get a larger threshold and a
+    # Bonferroni-adjusted confidence level (many categories are tested at once).
+    category_quality_threshold: float = Field(default=0.20, ge=0)
+    bonferroni: bool = True
     latency_threshold: float = Field(default=0.50, ge=0)
     cost_threshold: float = Field(default=0.25, ge=0)
     rate_threshold: float = Field(default=0.10, ge=0)
