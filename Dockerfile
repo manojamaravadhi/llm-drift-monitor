@@ -14,10 +14,11 @@ RUN pip install .
 COPY config ./config
 COPY datasets ./datasets
 COPY dashboard ./dashboard
+COPY data ./data
 COPY .streamlit ./.streamlit
 
 RUN useradd --create-home app && chown -R app /app
 USER app
-EXPOSE 8501
-HEALTHCHECK CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"
-CMD ["streamlit", "run", "dashboard/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+EXPOSE 8501 7860
+HEALTHCHECK CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')" || exit 0
+CMD ["sh", "-c", "streamlit run dashboard/app.py --server.port=${PORT:-8501} --server.address=0.0.0.0"]

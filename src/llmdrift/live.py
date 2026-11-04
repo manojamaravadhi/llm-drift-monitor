@@ -63,6 +63,8 @@ def ask_one(
         result = build_provider(cfg, [item]).generate(request)
     except ProviderError as exc:
         return LiveAnswer(cfg.name, cfg.model, error=f"{exc.kind}: {str(exc)[:200]}")
+    except Exception as exc:
+        return LiveAnswer(cfg.name, cfg.model, error=f"error: {str(exc)[:150]}")
     cost = compute_cost(result.input_tokens, result.output_tokens, pricing.get(cfg.model))
     return LiveAnswer(
         model_name=cfg.name,
@@ -93,3 +95,17 @@ def ask_models(
         return []
     with ThreadPoolExecutor(max_workers=len(models)) as pool:
         return list(pool.map(lambda m: ask_one(m, item, gen, pricing, max_tokens), models))
+
+
+def friendly_error(err: str) -> str:
+    """Format provider error string into a human-friendly message for the UI."""
+    low = err.lower()
+    if "rate_limit" in low or "429" in low:
+        return f"⏳ Rate limit on free tier. Please wait ~30s. ({err})"
+    if "service_unavailable" in low or "503" in low:
+        return f"⚠️ Provider temporarily overloaded (503). ({err})"
+    if "timeout" in low:
+        return f"⏱️ Request timed out waiting for provider. ({err})"
+    if "authentication" in low or "api_key" in low:
+        return f"🔑 Authentication error: check API key. ({err})"
+    return f"❌ {err}"

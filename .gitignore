@@ -21,3 +21,4 @@ reports/*
 .deepeval/
 .DS_Store
 .claude/
+.streamlit/secrets.toml
